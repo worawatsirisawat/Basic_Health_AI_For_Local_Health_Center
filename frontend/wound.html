@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Local Health AI — ประเมินบาดแผล</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <h2>ประเมินบาดแผล</h2>
+    <p class="hint">ถ่ายภาพหรือเลือกภาพแผล จากนั้นลากกรอบสี่เหลี่ยมคร่าวๆ ครอบบริเวณแผล
+      แล้วพิมพ์สิ่งที่เจ้าหน้าที่สังเกตเห็นเพิ่มเติม ระบบจะวิเคราะห์ทั้งภาพและข้อความประกอบกัน</p>
+
+    <label for="fileInput">ภาพถ่ายแผล</label>
+    <input type="file" id="fileInput" accept="image/*" capture="environment">
+
+    <div class="canvas-holder" id="canvasHolder" style="display:none;">
+      <canvas id="woundCanvas"></canvas>
+      <div class="canvas-hint" id="canvasHint">ลากเมาส์หรือใช้นิ้วลากเพื่อวาดกรอบครอบบริเวณแผล</div>
+    </div>
+
+    <label for="note">สิ่งที่เจ้าหน้าที่สังเกตเห็น</label>
+    <textarea id="note" placeholder="เช่น แผลลึกประมาณ 1 ซม. มีหนองเล็กน้อย ผู้ป่วยบอกว่าโดนตะปูตำเมื่อ 2 วันก่อน ยังไม่ได้ทำแผล"></textarea>
+    <p class="muted" style="margin-top:6px;">
+      หากข้อความที่ระบุขัดแย้งกับผลวิเคราะห์จากภาพ ระบบจะยึดการประเมินของเจ้าหน้าที่เป็นหลัก
+      เพราะเจ้าหน้าที่เห็นแผลจริงต่อหน้า
+    </p>
+
+    <label for="refCm">ขนาดอ้างอิงของภาพ (ไม่บังคับ)</label>
+    <input type="number" id="refCm" step="0.5" placeholder="ความกว้างจริงของภาพทั้งภาพ หน่วยเซนติเมตร">
+    <p class="muted" style="margin-top:6px;">
+      ถ้าไม่ระบุ ระบบจะประมาณขนาดจากสมมติฐานระยะถ่ายภาพ ซึ่งอาจคลาดเคลื่อนได้มาก
+    </p>
+
+    <div class="btn-row">
+      <button id="analyzeBtn" disabled>วิเคราะห์แผล</button>
+      <button class="secondary" onclick="resetAll()">เริ่มใหม่</button>
+      <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:400;font-size:.88rem;">
+        <input type="checkbox" id="usePubmed" checked style="width:auto;"> ค้นหลักฐานจาก PubMed ประกอบ
+      </label>
+    </div>
+    <div class="error-text" id="err"></div>
+  </div>
+
+  <div id="result"></div>
+
+  <div class="disclaimer">
+    การวิเคราะห์ภาพเป็นการประมาณจากค่าสีเท่านั้น ไม่ใช่การวินิจฉัยทางการแพทย์
+    ให้ใช้การประเมินด้วยตาของเจ้าหน้าที่เป็นหลักเสมอ
+  </div>
+</div>
+
+<!-- Popup แจ้งเตือนเมื่อพบสัญญาณอันตราย ให้เลือกได้สองทาง -->
+<div class="modal-backdrop" id="dangerModal">
+  <div class="modal">
+    <h3 id="dangerTitle"></h3>
+    <div class="body" id="dangerBody"></div>
+    <div class="btn-row">
+      <button class="danger" onclick="chooseRefer()">ส่งต่อโรงพยาบาลทันที</button>
+      <button class="secondary" onclick="chooseContinue()">ขอถามต่อกับระบบ</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script>
+requireLogin();
+renderTopbar("wound");
+
+let imageFile = null, img = new Image();
+let bbox = {x:0, y:0, w:1, h:1};
+let drawing = false, startX = 0, startY = 0;
+let lastResult = null, referred = false;
+
+const canvas = document.getElementById("woundCanvas");
+const ctx = canvas.getContext("2d");
+const holder = document.getElementById("canvasHolder");
+const analyzeBtn = document.getElementById("analyzeBtn");
+
+document.getElementById("fileInput").onchange = (e) => {
+  const f = e.target.files[0];
+  if(!f) return;
+  imageFile = f;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    img = new Image();
+    img.onload = () => {
+      const maxW = Math.min(560, window.innerWidth - 80);
+      const scale = Math.min(1, maxW / img.width);
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      bbox = {x:0, y:0, w:1, h:1};
+      redraw();
+      holder.style.display = "block";
+      analyzeBtn.disabled = false;
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(f);
+};
+
+function redraw(){
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  if(bbox.w < 1 || bbox.h < 1 || bbox.x > 0 || bbox.y > 0){
+    const x = bbox.x * canvas.width, y = bbox.y * canvas.height;
+    const w = bbox.w * canvas.width, h = bbox.h * canvas.height;
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,.35)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(x, y, w, h);
+    ctx.drawImage(img, x / canvas.width * img.width, y / canvas.height * img.height,
+                  w / canvas.width * img.width, h / canvas.height * img.height, x, y, w, h);
+    ctx.strokeStyle = "#2f6f5e"; ctx.lineWidth = 3;
+    ctx.strokeRect(x, y, w, h);
+    ctx.restore();
+  }
+}
+
+function pos(e){
+  const r = canvas.getBoundingClientRect();
+  const t = e.touches ? e.touches[0] : e;
+  return {x: (t.clientX - r.left) * (canvas.width / r.width),
+          y: (t.clientY - r.top) * (canvas.height / r.height)};
+}
+
+function startDraw(e){ e.preventDefault(); const p = pos(e); drawing = true; startX = p.x; startY = p.y; }
+function moveDraw(e){
+  if(!drawing) return;
+  e.preventDefault();
+  const p = pos(e);
+  bbox = {
+    x: Math.min(startX, p.x) / canvas.width,
+    y: Math.min(startY, p.y) / canvas.height,
+    w: Math.abs(p.x - startX) / canvas.width,
+    h: Math.abs(p.y - startY) / canvas.height
+  };
+  redraw();
+}
+function endDraw(e){
+  if(!drawing) return;
+  drawing = false;
+  if(bbox.w < 0.02 || bbox.h < 0.02){ bbox = {x:0,y:0,w:1,h:1}; redraw(); }
+  document.getElementById("canvasHint").textContent =
+    (bbox.w < 1 ? `เลือกบริเวณแผลแล้ว (${Math.round(bbox.w*100)}% × ${Math.round(bbox.h*100)}% ของภาพ) ลากใหม่ได้ถ้าต้องการแก้ไข`
+                : "ลากเมาส์หรือใช้นิ้วลากเพื่อวาดกรอบครอบบริเวณแผล");
+}
+
+canvas.addEventListener("mousedown", startDraw);
+canvas.addEventListener("mousemove", moveDraw);
+canvas.addEventListener("mouseup", endDraw);
+canvas.addEventListener("mouseleave", endDraw);
+canvas.addEventListener("touchstart", startDraw, {passive:false});
+canvas.addEventListener("touchmove", moveDraw, {passive:false});
+canvas.addEventListener("touchend", endDraw);
+
+analyzeBtn.onclick = async () => {
+  if(!imageFile){ return; }
+  const err = document.getElementById("err");
+  err.textContent = "";
+  analyzeBtn.disabled = true;
+  analyzeBtn.innerHTML = '<span class="spinner"></span>กำลังวิเคราะห์';
+
+  const fd = new FormData();
+  fd.append("file", imageFile);
+  fd.append("bbox_x", bbox.x); fd.append("bbox_y", bbox.y);
+  fd.append("bbox_w", bbox.w); fd.append("bbox_h", bbox.h);
+  fd.append("user_note", document.getElementById("note").value);
+  fd.append("reference_cm", document.getElementById("refCm").value || "");
+  fd.append("use_pubmed", document.getElementById("usePubmed").checked);
+
+  try {
+    const res = await apiForm("/api/wound/analyze", fd);
+    lastResult = res;
+    renderResult(res);
+    if(res.popup && res.popup.show) showDanger(res.popup);
+  } catch(ex){
+    err.textContent = ex.message;
+  }
+  analyzeBtn.disabled = false;
+  analyzeBtn.textContent = "วิเคราะห์แผล";
+};
+
+function showDanger(popup){
+  document.getElementById("dangerTitle").textContent = popup.title;
+  document.getElementById("dangerBody").textContent = popup.message;
+  document.getElementById("dangerModal").classList.add("show");
+}
+function chooseRefer(){
+  referred = true;
+  document.getElementById("dangerModal").classList.remove("show");
+  document.getElementById("result").insertAdjacentHTML("afterbegin", `
+    <div class="card">
+      <div class="alert-box">
+        <div class="title">บันทึกการตัดสินใจ: ส่งต่อโรงพยาบาล</div>
+        กรุณาประสานส่งต่อตามแนวทางของหน่วยบริการ และแจ้งลักษณะแผลที่พบให้ปลายทางทราบ
+      </div>
+      <div class="btn-row"><button class="secondary" onclick="saveConsult()">บันทึกการประเมินนี้</button></div>
+    </div>`);
+}
+function chooseContinue(){
+  document.getElementById("dangerModal").classList.remove("show");
+}
+
+function renderResult(res){
+  const a = res.analysis, ad = res.advice, t = a.tissue;
+
+  const flagBox = res.red_flag.triggered ? `
+    <div class="alert-box">
+      <div class="title">ตรวจพบสัญญาณที่เข้าเกณฑ์ส่งต่อ (กฎตายตัวของระบบ)</div>
+      ${res.red_flag.matches.map(m =>
+        `${escapeHtml(m.name)} — ${escapeHtml(m.reason)}\nหลักฐานที่ตรวจพบ: ${escapeHtml(m.evidence || "")}`
+      ).join("\n\n")}
+    </div>` : "";
+
+  const advisoryBox = (res.red_flag.advisories || []).length ? `
+    <div class="info-box"><strong>ข้อสังเกตที่ควรตรวจสอบเพิ่มเติม</strong><br>
+      ${res.red_flag.advisories.map(x =>
+        `${escapeHtml(x.name)} — ${escapeHtml(x.note)}`).join("<br><br>")}
+    </div>` : "";
+
+  const qualityBox = (a.quality.warnings || []).length ? `
+    <div class="info-box"><strong>ข้อสังเกตเรื่องคุณภาพภาพ</strong><br>
+      ${a.quality.warnings.map(escapeHtml).join("<br>")}
+      <br><br>ระบบยังวิเคราะห์ให้ตามปกติ แต่ผลอาจคลาดเคลื่อนมากกว่าปกติ
+    </div>` : "";
+
+  const conflictBox = ad.conflict_note ? `
+    <div class="info-box"><strong>พบความไม่สอดคล้องระหว่างภาพกับข้อความ</strong><br>
+      ${escapeHtml(ad.conflict_note)}</div>` : "";
+
+  const recs = (ad.recommendations || []).map(r => `
+    <div class="rec-item ${r.is_substitute ? "substitute" : ""}">
+      <div class="name">${escapeHtml(r.medicine)}${r.is_substitute ? '<span class="badge sub">ทดแทน</span>' : ""}</div>
+      ${r.why ? `<div class="sub"><strong>เหตุผล:</strong> ${escapeHtml(r.why)}</div>` : ""}
+      ${r.how_to_use ? `<div class="sub"><strong>วิธีใช้:</strong> ${escapeHtml(r.how_to_use)}</div>` : ""}
+      ${r.substitute_note ? `<div class="sub">${escapeHtml(r.substitute_note)}</div>` : ""}
+    </div>`).join("") || '<p class="muted">ไม่มีรายการเวชภัณฑ์ที่แนะนำ</p>';
+
+  const mockNote = ad.mock ? `
+    <div class="info-box"><strong>กำลังทำงานใน Mock mode</strong><br>
+      คำแนะนำนี้มาจากชุดกฎสาธิตในระบบ ไม่ได้มาจากโมเดลภาษาจริง
+      ตั้งค่า TYPHOON_API_KEY ในไฟล์ .env เพื่อสลับไปใช้ Typhoon</div>` : "";
+
+  document.getElementById("result").innerHTML = `
+    <div class="card">
+      <h2>ผลการวิเคราะห์ ${confidenceBadge(ad.confidence)}</h2>
+      ${flagBox}${mockNote}${advisoryBox}${qualityBox}${conflictBox}
+
+      <div class="stat-row">
+        <div class="stat"><div class="n">${Math.round(t.granulation_ratio*100)}%</div><div class="l">เนื้อแดง</div></div>
+        <div class="stat warn"><div class="n">${Math.round(t.slough_ratio*100)}%</div><div class="l">เนื้อเหลือง</div></div>
+        <div class="stat danger"><div class="n">${Math.round(t.necrotic_ratio*100)}%</div><div class="l">เนื้อคล้ำ</div></div>
+        <div class="stat"><div class="n">${a.size.longest_cm}</div><div class="l">ด้านยาวสุด (ซม.)</div></div>
+        <div class="stat ${a.infection.score>=3?'danger':(a.infection.score>=1?'warn':'')}">
+          <div class="n">${escapeHtml(a.infection.level)}</div><div class="l">ความเสี่ยงติดเชื้อ</div></div>
+      </div>
+
+      ${ad.degraded ? `<div class="result-block" style="border-left:4px solid #c47f00;background:#fff8e6">
+        <strong>คำแนะนำนี้มาจากกฎมาตรฐานในเครื่อง</strong>
+        <p class="muted">${escapeHtml(ad.degraded_note || "")}</p>
+      </div>` : ""}
+
+      <div class="result-block">
+        <h3>สิ่งที่ประเมินได้</h3>
+        <p>${escapeHtml(ad.assessment || "")}</p>
+        ${ad.conflict_note ? `<p class="muted">${escapeHtml(ad.conflict_note)}</p>` : ""}
+      </div>
+
+      <div class="result-block">
+        <h3>สัญญาณที่ตรวจพบจากภาพ</h3>
+        <ul class="tight">${a.infection.signals.map(s => `<li>${escapeHtml(s)}</li>`).join("")}</ul>
+      </div>
+
+      <div class="result-block">
+        <h3>ขั้นตอนการทำแผล</h3>
+        <ol class="tight">${(ad.care_steps||[]).map(s => `<li>${escapeHtml(s)}</li>`).join("")}</ol>
+      </div>
+
+      <div class="result-block">
+        <h3>เวชภัณฑ์ที่แนะนำจากบัญชีของหน่วยบริการนี้</h3>
+        ${recs}
+      </div>
+
+      <div class="result-block">
+        <h3>อาการที่ต้องกลับมาพบเจ้าหน้าที่ทันที</h3>
+        <ul class="tight">${(ad.warning_signs||[]).map(s => `<li>${escapeHtml(s)}</li>`).join("")}</ul>
+      </div>
+
+      <div class="result-block">
+        <h3>หลักฐานงานวิจัยที่ค้นได้จาก PubMed</h3>
+        ${renderEvidence(res.evidence)}
+      </div>
+
+      ${renderSources(ad.sources)}
+
+      <div class="result-block">
+        <h3>ข้อจำกัดของการวิเคราะห์นี้</h3>
+        <p class="muted">${escapeHtml(a.limitation)}</p>
+        <p class="muted">วิธีที่ใช้: ${escapeHtml(a.method)} — ${escapeHtml(a.region_meta.note || "")}</p>
+        <p class="muted">การประมาณขนาด: ${escapeHtml(a.size.calibration)}</p>
+        <p class="muted">ความเป็นส่วนตัว: ${escapeHtml(a.privacy_note)}</p>
+      </div>
+
+      <div class="btn-row">
+        <button class="secondary" onclick="saveConsult()">บันทึกการประเมินนี้</button>
+        <button class="secondary" onclick="resetAll()">เริ่มใหม่</button>
+      </div>
+    </div>`;
+}
+
+function resetAll(){
+  imageFile = null; lastResult = null; referred = false;
+  bbox = {x:0,y:0,w:1,h:1};
+  document.getElementById("fileInput").value = "";
+  document.getElementById("note").value = "";
+  document.getElementById("refCm").value = "";
+  document.getElementById("result").innerHTML = "";
+  document.getElementById("err").textContent = "";
+  holder.style.display = "none";
+  analyzeBtn.disabled = true;
+}
+
+async function saveConsult(){
+  if(!lastResult){ alert("ยังไม่มีผลการประเมินให้บันทึก"); return; }
+  const transcript = [
+    {role:"user", content: "บันทึกภาพแผลและข้อสังเกต: " + (document.getElementById("note").value || "(ไม่ได้ระบุ)")},
+    {role:"assistant", content: lastResult.advice.assessment || ""}
+  ];
+  const ids = (lastResult.red_flag.matches || []).map(m => m.id);
+  await askConsentAndSave("wound", transcript,
+    lastResult.advice.assessment || "", referred || lastResult.advice.refer, ids);
+}
+</script>
+</body>
+</html>

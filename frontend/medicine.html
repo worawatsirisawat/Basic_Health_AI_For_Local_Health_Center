@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Local Health AI — ปรึกษาอาการ</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <h2>ปรึกษาอาการ</h2>
+    <p class="hint">พิมพ์อาการที่ผู้เข้ารับบริการบอก ระบบจะซักถามต่อทีละข้อจนได้ข้อมูลเพียงพอ
+      แล้วเสนอทางเลือกจากยาที่มีอยู่จริงในหน่วยบริการนี้</p>
+
+    <div class="chat" id="chat"></div>
+
+    <div class="chat-input">
+      <input type="text" id="input" placeholder="พิมพ์อาการหรือคำตอบที่นี่" autocomplete="off">
+      <button id="send">ส่ง</button>
+    </div>
+
+    <div class="btn-row">
+      <button class="secondary small" onclick="restart()">เริ่มการปรึกษาใหม่</button>
+      <button class="secondary small" onclick="saveConsult()">บันทึกการปรึกษานี้</button>
+      <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:400;font-size:.88rem;">
+        <input type="checkbox" id="usePubmed" checked style="width:auto;"> ค้นหลักฐานจาก PubMed ประกอบ
+      </label>
+    </div>
+  </div>
+
+  <div id="result"></div>
+
+  <div class="disclaimer">
+    ระบบนี้เป็นเครื่องมือช่วยเสนอข้อมูล ไม่ใช่การวินิจฉัยทางการแพทย์
+    การตัดสินใจสุดท้ายเป็นของเจ้าหน้าที่ผู้ดูแลผู้ป่วยเสมอ
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script>
+requireLogin();
+renderTopbar("medicine");
+
+let history = [];
+let lastResult = null;
+let redFlagIds = [];
+let referred = false;
+
+const chatEl = document.getElementById("chat");
+const inputEl = document.getElementById("input");
+const sendBtn = document.getElementById("send");
+
+function addMsg(role, text){
+  const cls = role === "user" ? "user" : (role === "alert" ? "alert" : (role === "system" ? "system" : "ai"));
+  chatEl.insertAdjacentHTML("beforeend",
+    `<div class="msg ${cls}"><div class="bubble">${escapeHtml(text)}</div></div>`);
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+function greet(){
+  addMsg("ai", "สวัสดีค่ะ กรุณาพิมพ์อาการหลักที่ผู้เข้ารับบริการบอกมา เช่น มีไข้ ไอ ปวดท้อง หรือท้องเสีย\n\nขอความร่วมมือไม่พิมพ์ชื่อ เลขบัตรประชาชน หรือข้อมูลที่ระบุตัวตนของผู้เข้ารับบริการ");
+}
+greet();
+
+async function send(){
+  const text = inputEl.value.trim();
+  if(!text) return;
+
+  addMsg("user", text);
+  inputEl.value = "";
+  sendBtn.disabled = true;
+  sendBtn.innerHTML = '<span class="spinner"></span>';
+
+  try {
+    const res = await api("/api/medicine/chat", {
+      method:"POST",
+      body: JSON.stringify({
+        history: history,
+        message: text,
+        use_pubmed: document.getElementById("usePubmed").checked
+      })
+    });
+
+    history = res.history || history;
+    lastResult = res;
+
+    // ชั้นกฎตายตัวทำงาน — บังคับส่งต่อ
+    if(res.phase === "refer_immediately"){
+      referred = true;
+      redFlagIds = (res.red_flag.matches || []).map(m => m.id);
+      addMsg("alert", res.message);
+      renderReferral(res);
+      sendBtn.disabled = false; sendBtn.textContent = "ส่ง";
+      return;
+    }
+
+    if(res.phase === "asking"){
+      let q = res.question || "";
+      if(res.question_hint) q += `\n(${res.question_hint})`;
+      addMsg("ai", q);
+      document.getElementById("result").innerHTML = "";
+    } else if(res.phase === "recommend"){
+      addMsg("ai", res.assessment || "สรุปคำแนะนำแล้ว ดูรายละเอียดด้านล่าง");
+      renderRecommendation(res);
+    } else if(res.phase === "error"){
+      addMsg("system", res.question || res.error);
+    }
+  } catch(ex){
+    addMsg("system", "เกิดข้อผิดพลาด: " + ex.message);
+  }
+  sendBtn.disabled = false; sendBtn.textContent = "ส่ง";
+}
+
+sendBtn.onclick = send;
+inputEl.onkeydown = (e) => { if(e.key === "Enter") send(); };
+
+function renderReferral(res){
+  const matches = (res.red_flag.matches || []).map(m => `
+    <div class="rec-item substitute">
+      <div class="name">${escapeHtml(m.name)} <span class="badge sub">${escapeHtml(m.id)}</span></div>
+      <div class="sub"><strong>เหตุผล:</strong> ${escapeHtml(m.reason)}</div>
+      <div class="sub"><strong>คำแนะนำ:</strong> ${escapeHtml(m.action)}</div>
+      <div class="sub"><strong>คำที่ตรวจพบในบทสนทนา:</strong> ${escapeHtml((m.matched_terms||[]).join(", "))}</div>
+    </div>`).join("");
+
+  document.getElementById("result").innerHTML = `
+    <div class="card">
+      <div class="alert-box">
+        <div class="title">ระบบแนะนำให้ส่งต่อโรงพยาบาลทันที</div>
+        การแจ้งเตือนนี้มาจากกฎความปลอดภัยตายตัวของระบบ ทำงานก่อนการประเมินของ AI
+        และ AI ไม่มีสิทธิ์ยกเลิกการแจ้งเตือนนี้
+      </div>
+      ${matches}
+      <div class="info-box">
+        การตัดสินใจสุดท้ายยังเป็นของเจ้าหน้าที่เสมอ ถ้าประเมินแล้วเห็นว่ากรณีนี้ไม่เข้าข่ายจริง
+        สามารถพิมพ์ข้อมูลเพิ่มเติมเพื่อปรึกษาต่อได้ แต่ระบบจะบันทึกไว้ว่ามีการแจ้งเตือนเกิดขึ้น
+      </div>
+    </div>`;
+}
+
+function renderRecommendation(res){
+  const recs = (res.recommendations || []).map(r => `
+    <div class="rec-item ${r.is_substitute ? "substitute" : ""}">
+      <div class="name">${escapeHtml(r.medicine)}${r.is_substitute ? '<span class="badge sub">ยาทดแทน</span>' : ""}</div>
+      ${r.why ? `<div class="sub"><strong>เหตุผลที่แนะนำ:</strong> ${escapeHtml(r.why)}</div>` : ""}
+      ${r.how_to_use ? `<div class="sub"><strong>วิธีใช้:</strong> ${escapeHtml(r.how_to_use)}</div>` : ""}
+      ${r.substitute_note ? `<div class="sub"><strong>ข้อควรทราบเรื่องยาทดแทน:</strong> ${escapeHtml(r.substitute_note)}</div>` : ""}
+    </div>`).join("") || '<p class="muted">ไม่มีรายการยาที่แนะนำ</p>';
+
+  const selfCare = (res.self_care || []).length
+    ? `<div class="result-block"><h3>การดูแลที่ไม่ใช่ยา</h3>
+        <ul class="tight">${res.self_care.map(s => `<li>${escapeHtml(s)}</li>`).join("")}</ul></div>` : "";
+
+  const referBox = res.refer
+    ? `<div class="alert-box"><div class="title">AI ประเมินว่าควรส่งต่อ</div>${escapeHtml(res.refer_reason || "")}</div>` : "";
+
+  const mockNote = res.mock
+    ? `<div class="info-box"><strong>กำลังทำงานใน Mock mode</strong><br>
+        คำแนะนำนี้มาจากชุดกฎสาธิตในระบบ ไม่ได้มาจากโมเดลภาษาจริง
+        ตั้งค่า TYPHOON_API_KEY ในไฟล์ .env เพื่อสลับไปใช้ Typhoon</div>` : "";
+
+  document.getElementById("result").innerHTML = `
+    <div class="card">
+      <h2>คำแนะนำ ${confidenceBadge(res.confidence)}</h2>
+      ${mockNote}
+      ${referBox}
+      <div class="result-block">
+        <h3>สิ่งที่ประเมินได้</h3>
+        <p>${escapeHtml(res.assessment || "")}</p>
+      </div>
+      <div class="result-block">
+        <h3>เหตุผลประกอบ</h3>
+        <p>${escapeHtml(res.reasoning || "")}</p>
+      </div>
+      <div class="result-block">
+        <h3>ยาที่แนะนำจากบัญชีของหน่วยบริการนี้</h3>
+        ${recs}
+      </div>
+      ${selfCare}
+      <div class="result-block">
+        <h3>หลักฐานงานวิจัยที่ค้นได้จาก PubMed</h3>
+        ${renderEvidence(res.evidence)}
+      </div>
+      ${renderSources(res.sources)}
+      <div class="disclaimer">${escapeHtml(res.disclaimer || "")}</div>
+      <div class="btn-row">
+        <button class="secondary" onclick="saveConsult()">บันทึกการปรึกษานี้</button>
+        <button class="secondary" onclick="restart()">เริ่มการปรึกษาใหม่</button>
+      </div>
+    </div>`;
+}
+
+function restart(){
+  history = []; lastResult = null; redFlagIds = []; referred = false;
+  chatEl.innerHTML = ""; document.getElementById("result").innerHTML = "";
+  greet();
+}
+
+async function saveConsult(){
+  if(!history.length){ alert("ยังไม่มีบทสนทนาให้บันทึก"); return; }
+  const outcome = lastResult
+    ? (lastResult.assessment || lastResult.message || "").slice(0, 500) : "";
+  await askConsentAndSave("medicine", history, outcome, referred, redFlagIds);
+}
+</script>
+</body>
+</html>

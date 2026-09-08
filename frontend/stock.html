@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Local Health AI — บัญชียาและเวชภัณฑ์</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <h2>บัญชียาและเวชภัณฑ์</h2>
+    <p class="hint">ปรับจำนวนคงคลังตามรอบการตรวจนับของหน่วยบริการ
+      ระบบไม่หักจำนวนอัตโนมัติเมื่อ AI แนะนำยา จำนวนที่แสดงจึงตรงกับที่เจ้าหน้าที่บันทึกไว้ล่าสุดเสมอ</p>
+
+    <div class="stat-row" id="stats"></div>
+
+    <div class="btn-row" style="margin-top:0;">
+      <input type="text" id="search" placeholder="ค้นหาชื่อยา" style="flex:1; min-width:180px;">
+      <button class="secondary small" onclick="toggleAddForm()">เพิ่มรายการใหม่</button>
+      <button class="secondary small" onclick="loadStock()">รีเฟรช</button>
+    </div>
+  </div>
+
+  <div class="card" id="addForm" style="display:none;">
+    <h2>เพิ่มรายการยาหรือเวชภัณฑ์</h2>
+    <p class="hint">ใช้เมื่อหน่วยบริการมียาที่ระบบยังไม่มีในรายการ
+      ระบบไม่ตรวจสอบข้อมูลย้อนกับฐานข้อมูลกลาง จึงขอให้ตรวจทานชื่อยาให้ตรงกับฉลากจริงก่อนบันทึก</p>
+
+    <label for="mName">ชื่อยาหรือเวชภัณฑ์</label>
+    <input type="text" id="mName" placeholder="พิมพ์เพื่อดูรายชื่อที่ระบบรู้จัก" autocomplete="off">
+    <div id="suggestions"></div>
+
+    <label for="mCategory">หมวด</label>
+    <select id="mCategory">
+      <option>ยาแก้ปวดลดไข้</option>
+      <option>ยาแก้อักเสบไม่ใช่สเตียรอยด์</option>
+      <option>ยาปฏิชีวนะ</option>
+      <option>ยาทาปฏิชีวนะ</option>
+      <option>ยาแก้แพ้</option>
+      <option>ยาแก้ไอ</option>
+      <option>ยาลดกรด</option>
+      <option>ยาแก้คลื่นไส้</option>
+      <option>สารน้ำทดแทน</option>
+      <option>เวชภัณฑ์ทำแผล</option>
+      <option>ยาทาแผลไฟไหม้</option>
+      <option>อื่นๆ</option>
+    </select>
+
+    <label for="mIndications">ข้อบ่งใช้โดยสังเขป</label>
+    <input type="text" id="mIndications" placeholder="เช่น ไข้ ปวดศีรษะ">
+
+    <div style="display:flex; gap:12px;">
+      <div style="flex:1;">
+        <label for="mQty">จำนวนคงเหลือ</label>
+        <input type="number" id="mQty" value="0" min="0">
+      </div>
+      <div style="flex:1;">
+        <label for="mUnit">หน่วยนับ</label>
+        <input type="text" id="mUnit" value="เม็ด">
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button onclick="addMedicine()">บันทึกรายการ</button>
+      <button class="secondary" onclick="toggleAddForm()">ยกเลิก</button>
+    </div>
+    <div class="error-text" id="addErr"></div>
+  </div>
+
+  <div class="card">
+    <div id="tableBox"><p class="muted"><span class="spinner"></span>กำลังโหลด...</p></div>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script>
+requireLogin();
+renderTopbar("stock");
+
+let allMeds = [];
+
+async function loadStock(){
+  try {
+    const data = await api("/api/medicine/stock");
+    allMeds = data.medicines;
+    renderStats(data.summary);
+    renderTable();
+  } catch(ex){
+    document.getElementById("tableBox").innerHTML = `<p class="error-text">${escapeHtml(ex.message)}</p>`;
+  }
+}
+
+function renderStats(s){
+  document.getElementById("stats").innerHTML = `
+    <div class="stat"><div class="n">${s.total_items}</div><div class="l">รายการทั้งหมด</div></div>
+    <div class="stat"><div class="n">${s.in_stock}</div><div class="l">มีในสต็อก</div></div>
+    <div class="stat warn"><div class="n">${s.low_stock}</div><div class="l">เหลือน้อย</div></div>
+    <div class="stat danger"><div class="n">${s.out_of_stock}</div><div class="l">หมด</div></div>`;
+}
+
+function renderTable(){
+  const q = document.getElementById("search").value.trim().toLowerCase();
+  const meds = q ? allMeds.filter(m =>
+      m.name.toLowerCase().includes(q) || (m.generic||"").toLowerCase().includes(q) ||
+      (m.category||"").toLowerCase().includes(q)) : allMeds;
+
+  if(!meds.length){
+    document.getElementById("tableBox").innerHTML = '<p class="muted">ไม่พบรายการที่ค้นหา</p>';
+    return;
+  }
+
+  const rows = meds.map(m => {
+    const cls = m.quantity === 0 ? "out-of-stock" : (m.quantity <= 10 ? "low-stock" : "");
+    return `<tr class="${cls}">
+      <td>${escapeHtml(m.name)}${m.is_custom ? '<span class="badge sub">เพิ่มเอง</span>' : ""}
+          ${m.indications ? `<div class="muted" style="font-size:.8rem;">${escapeHtml(m.indications)}</div>` : ""}</td>
+      <td>${escapeHtml(m.category)}</td>
+      <td><input type="number" min="0" value="${m.quantity}" id="q${m.id}"> ${escapeHtml(m.unit)}</td>
+      <td>
+        <button class="small" onclick="saveQty(${m.id})">บันทึก</button>
+        ${m.is_custom ? `<button class="small danger" onclick="removeMed(${m.id})">ลบ</button>` : ""}
+      </td>
+    </tr>`;
+  }).join("");
+
+  document.getElementById("tableBox").innerHTML = `
+    <table>
+      <tr><th>รายการ</th><th>หมวด</th><th>จำนวนคงเหลือ</th><th>จัดการ</th></tr>
+      ${rows}
+    </table>`;
+}
+
+document.getElementById("search").oninput = renderTable;
+
+async function saveQty(id){
+  const v = parseInt(document.getElementById("q" + id).value || "0", 10);
+  try {
+    await api(`/api/medicine/stock/${id}`, {method:"PATCH", body: JSON.stringify({quantity: v})});
+    await loadStock();
+  } catch(ex){ alert(ex.message); }
+}
+
+async function removeMed(id){
+  if(!confirm("ยืนยันลบรายการนี้ออกจากบัญชียาของหน่วยบริการ")) return;
+  try { await api(`/api/medicine/stock/${id}`, {method:"DELETE"}); await loadStock(); }
+  catch(ex){ alert(ex.message); }
+}
+
+function toggleAddForm(){
+  const f = document.getElementById("addForm");
+  f.style.display = f.style.display === "none" ? "block" : "none";
+  document.getElementById("addErr").textContent = "";
+}
+
+document.getElementById("mName").oninput = async (e) => {
+  const q = e.target.value.trim();
+  const box = document.getElementById("suggestions");
+  if(q.length < 2){ box.innerHTML = ""; return; }
+  try {
+    const r = await api("/api/medicine/autocomplete?q=" + encodeURIComponent(q));
+    box.innerHTML = r.suggestions.length
+      ? '<div class="muted" style="margin-top:6px;">รายชื่อที่ระบบรู้จัก (คลิกเพื่อเติมอัตโนมัติ): ' +
+        r.suggestions.map(s =>
+          `<a href="#" onclick='fillFrom(${JSON.stringify(s).replace(/'/g,"&#39;")});return false;'>${escapeHtml(s.name)}</a>`
+        ).join(" · ") + "</div>"
+      : "";
+  } catch(ex){ box.innerHTML = ""; }
+};
+
+function fillFrom(s){
+  document.getElementById("mName").value = s.name;
+  document.getElementById("mCategory").value = s.category;
+  document.getElementById("mIndications").value = s.indications || "";
+  document.getElementById("mUnit").value = s.unit || "หน่วย";
+  document.getElementById("suggestions").innerHTML = "";
+}
+
+async function addMedicine(){
+  const err = document.getElementById("addErr");
+  err.textContent = "";
+  const name = document.getElementById("mName").value.trim();
+  if(!name){ err.textContent = "กรุณาระบุชื่อยาหรือเวชภัณฑ์"; return; }
+  try {
+    await api("/api/medicine/stock", {
+      method:"POST",
+      body: JSON.stringify({
+        name,
+        category: document.getElementById("mCategory").value,
+        indications: document.getElementById("mIndications").value,
+        quantity: parseInt(document.getElementById("mQty").value || "0", 10),
+        unit: document.getElementById("mUnit").value || "หน่วย"
+      })
+    });
+    document.getElementById("mName").value = "";
+    document.getElementById("mIndications").value = "";
+    document.getElementById("mQty").value = "0";
+    toggleAddForm();
+    await loadStock();
+  } catch(ex){ err.textContent = ex.message; }
+}
+
+loadStock();
+</script>
+</body>
+</html>

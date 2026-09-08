@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Local Health AI — เลือกโหมด</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <h2>เลือกโหมดการใช้งาน</h2>
+    <p class="hint">เลือกโหมดที่ตรงกับกรณีของผู้เข้ารับบริการ</p>
+
+    <div class="mode-grid">
+      <a class="mode-card" href="medicine.html">
+        <div class="icon">💊</div>
+        <h3>ปรึกษาอาการ</h3>
+        <p>ซักประวัติอาการเป็นขั้นตอน แล้วเสนอยาที่มีอยู่จริงในบัญชีของหน่วยบริการ พร้อมเหตุผลประกอบ</p>
+      </a>
+      <a class="mode-card" href="wound.html">
+        <div class="icon">🩹</div>
+        <h3>ประเมินบาดแผล</h3>
+        <p>ถ่ายภาพแผล วาดกรอบบริเวณแผล แล้ววิเคราะห์ร่วมกับคำบรรยายของเจ้าหน้าที่</p>
+      </a>
+    </div>
+
+    <div class="info-box">
+      <strong>กรณีที่ผู้เข้ารับบริการมีทั้งอาการป่วยและบาดแผลพร้อมกัน</strong><br>
+      ให้แยกเป็นสองรอบการปรึกษา โดยทำทีละโหมดจนจบ แล้วค่อยกลับมาเลือกอีกโหมดหนึ่ง
+      เพื่อให้การประเมินแต่ละด้านมีข้อมูลครบถ้วนและตรวจสอบย้อนหลังได้ชัดเจน
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>เครื่องมือจัดการ</h2>
+    <div class="mode-grid">
+      <a class="mode-card" href="stock.html">
+        <div class="icon">📋</div>
+        <h3>บัญชียาและเวชภัณฑ์</h3>
+        <p>ปรับจำนวนคงคลังตามรอบการตรวจนับ และเพิ่มรายการยาที่ระบบยังไม่มี</p>
+      </a>
+      <a class="mode-card" href="#" onclick="showStatus(event)">
+        <div class="icon">⚙️</div>
+        <h3>สถานะระบบ</h3>
+        <p>ตรวจสอบโหมด AI ที่ใช้งาน การเชื่อมต่อ PubMed และจำนวนกฎความปลอดภัย</p>
+      </a>
+    </div>
+    <div id="statusBox"></div>
+  </div>
+
+  <div class="disclaimer">
+    ระบบนี้เป็นเครื่องมือช่วยเสนอข้อมูล ไม่ใช่การวินิจฉัยทางการแพทย์
+    การตัดสินใจสุดท้ายเป็นของเจ้าหน้าที่ผู้ดูแลผู้ป่วยเสมอ
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script>
+requireLogin();
+renderTopbar("select");
+
+async function showStatus(e){
+  e.preventDefault();
+  const box = document.getElementById("statusBox");
+  box.innerHTML = '<p class="muted"><span class="spinner"></span>กำลังตรวจสอบ...</p>';
+  try {
+    const s = await api("/api/system/status");
+    const llmBadge = s.llm.mode === "mock"
+      ? '<span class="badge mock">Mock mode</span>'
+      : '<span class="badge live">Typhoon</span>';
+    box.innerHTML = `
+      <div class="result-block" style="margin-top:16px;">
+        <h3>สถานะระบบ</h3>
+        <table>
+          <tr><th>รายการ</th><th>สถานะ</th></tr>
+          <tr><td>โหมด AI</td><td>${llmBadge} ${escapeHtml(s.llm.model)}</td></tr>
+          <tr><td>PubMed</td><td>${s.pubmed.enabled ? "เปิดใช้งาน" : "ปิด"} — ${escapeHtml(s.pubmed.rate_limit)}</td></tr>
+          <tr><td>กฎความปลอดภัยด้านอาการ</td><td>${s.safety_rules.symptom_rules} ข้อ</td></tr>
+          <tr><td>กฎความปลอดภัยด้านบาดแผล</td><td>${s.safety_rules.wound_rules} ข้อ</td></tr>
+          <tr><td>จำนวนคำถามซักประวัติ</td><td>${s.question_range.min} ถึง ${s.question_range.max} คำถาม</td></tr>
+          <tr><td>การตรวจสอบทางการแพทย์</td><td>${escapeHtml(s.safety_rules.last_reviewed_by)}</td></tr>
+        </table>
+      </div>`;
+  } catch(ex){ box.innerHTML = `<p class="error-text">${escapeHtml(ex.message)}</p>`; }
+}
+</script>
+</body>
+</html>

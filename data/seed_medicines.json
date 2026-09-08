@@ -1,0 +1,23 @@
+{
+  "_comment": "รายการยาตั้งต้นสำหรับ Prototype อ้างอิงกลุ่มยาที่พบทั่วไปในหน่วยบริการปฐมภูมิ ใช้เพื่อสาธิตระบบเท่านั้น ยังไม่ผ่านการตรวจสอบโดยเภสัชกร เจ้าหน้าที่ต้องปรับรายการและจำนวนให้ตรงกับหน่วยบริการจริงก่อนใช้งาน",
+  "medicines": [
+    {"name": "Paracetamol 500 mg", "generic": "paracetamol", "form": "เม็ด", "category": "ยาแก้ปวดลดไข้", "indications": "ไข้ ปวดศีรษะ ปวดเมื่อย", "quantity": 200, "unit": "เม็ด"},
+    {"name": "Paracetamol syrup 120 mg/5 ml", "generic": "paracetamol", "form": "น้ำเชื่อม", "category": "ยาแก้ปวดลดไข้", "indications": "ไข้ในเด็ก", "quantity": 15, "unit": "ขวด"},
+    {"name": "Ibuprofen 400 mg", "generic": "ibuprofen", "form": "เม็ด", "category": "ยาแก้อักเสบไม่ใช่สเตียรอยด์", "indications": "ปวดข้อ ปวดกล้ามเนื้อ อักเสบ", "quantity": 80, "unit": "เม็ด"},
+    {"name": "Chlorpheniramine 4 mg", "generic": "chlorpheniramine", "form": "เม็ด", "category": "ยาแก้แพ้", "indications": "คัดจมูก น้ำมูกไหล ผื่นคัน", "quantity": 150, "unit": "เม็ด"},
+    {"name": "Amoxicillin 500 mg", "generic": "amoxicillin", "form": "แคปซูล", "category": "ยาปฏิชีวนะ", "indications": "การติดเชื้อแบคทีเรียทางเดินหายใจส่วนบน", "quantity": 60, "unit": "แคปซูล"},
+    {"name": "Dicloxacillin 250 mg", "generic": "dicloxacillin", "form": "แคปซูล", "category": "ยาปฏิชีวนะ", "indications": "การติดเชื้อที่ผิวหนังและแผล", "quantity": 40, "unit": "แคปซูล"},
+    {"name": "ORS ผงเกลือแร่", "generic": "oral rehydration salts", "form": "ซอง", "category": "สารน้ำทดแทน", "indications": "ท้องเสีย ขาดน้ำ", "quantity": 100, "unit": "ซอง"},
+    {"name": "Antacid gel", "generic": "aluminium hydroxide + magnesium", "form": "น้ำ", "category": "ยาลดกรด", "indications": "แสบท้อง จุกเสียด กรดไหลย้อน", "quantity": 20, "unit": "ขวด"},
+    {"name": "Domperidone 10 mg", "generic": "domperidone", "form": "เม็ด", "category": "ยาแก้คลื่นไส้", "indications": "คลื่นไส้ อาเจียน", "quantity": 50, "unit": "เม็ด"},
+    {"name": "Dextromethorphan 15 mg", "generic": "dextromethorphan", "form": "เม็ด", "category": "ยาแก้ไอ", "indications": "ไอแห้ง ไม่มีเสมหะ", "quantity": 60, "unit": "เม็ด"},
+    {"name": "Normal Saline 0.9% (NSS)", "generic": "sodium chloride", "form": "ขวด", "category": "เวชภัณฑ์ทำแผล", "indications": "ล้างแผลทุกชนิด", "quantity": 30, "unit": "ขวด"},
+    {"name": "Povidone-iodine 10%", "generic": "povidone iodine", "form": "น้ำ", "category": "เวชภัณฑ์ทำแผล", "indications": "ฆ่าเชื้อรอบแผล", "quantity": 12, "unit": "ขวด"},
+    {"name": "Chlorhexidine 0.05%", "generic": "chlorhexidine", "form": "น้ำ", "category": "เวชภัณฑ์ทำแผล", "indications": "ทำความสะอาดแผลที่มีการติดเชื้อ", "quantity": 8, "unit": "ขวด"},
+    {"name": "ผ้าก๊อซปลอดเชื้อ 3x3 นิ้ว", "generic": "sterile gauze", "form": "ห่อ", "category": "เวชภัณฑ์ทำแผล", "indications": "ปิดแผลทั่วไป", "quantity": 120, "unit": "ห่อ"},
+    {"name": "แผ่นปิดแผลกันน้ำ", "generic": "transparent film dressing", "form": "แผ่น", "category": "เวชภัณฑ์ทำแผล", "indications": "ปิดแผลตื้นที่ต้องการกันน้ำ", "quantity": 50, "unit": "แผ่น"},
+    {"name": "พลาสเตอร์ปิดแผล", "generic": "adhesive plaster", "form": "ชิ้น", "category": "เวชภัณฑ์ทำแผล", "indications": "แผลถลอกขนาดเล็ก", "quantity": 200, "unit": "ชิ้น"},
+    {"name": "Mupirocin ointment 2%", "generic": "mupirocin", "form": "หลอด", "category": "ยาทาปฏิชีวนะ", "indications": "แผลติดเชื้อผิวหนังเฉพาะที่", "quantity": 10, "unit": "หลอด"},
+    {"name": "Silver sulfadiazine cream", "generic": "silver sulfadiazine", "form": "หลอด", "category": "ยาทาแผลไฟไหม้", "indications": "แผลไฟไหม้น้ำร้อนลวกระดับตื้น", "quantity": 6, "unit": "หลอด"}
+  ]
+}

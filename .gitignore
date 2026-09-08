@@ -1,0 +1,23 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# Runtime data / uploads (user-generated, not source)
+uploads/*
+!uploads/.gitkeep
+data/local_health.db
+
+# Internal docs explicitly marked not for git
+docs_DO_NOT_PUSH_TO_GIT/
+
+# OS/editor
+.DS_Store
+Thumbs.db

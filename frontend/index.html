@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Local Health AI — เข้าสู่ระบบ</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap wrap-narrow" style="padding-top:48px;">
+
+  <div style="text-align:center; margin-bottom:24px;">
+    <h1 style="margin:0 0 6px; color:var(--accent); font-size:1.6rem;">Local Health AI</h1>
+    <p class="muted" style="margin:0;">ผู้ช่วยประเมินเบื้องต้นสำหรับเจ้าหน้าที่สาธารณสุขและ อสม.</p>
+  </div>
+
+  <div class="card">
+    <h2>เข้าสู่ระบบและเลือกหน่วยบริการ</h2>
+    <p class="hint">ระบบนี้ใช้งานโดยเจ้าหน้าที่เท่านั้น ผู้เข้ารับบริการไม่เข้าถึงระบบโดยตรง</p>
+
+    <form id="loginForm">
+      <label for="unit">หน่วยบริการ</label>
+      <select id="unit" required><option value="">กำลังโหลด...</option></select>
+
+      <label for="username">ชื่อผู้ใช้</label>
+      <input type="text" id="username" autocomplete="username" required
+             placeholder="local_health_care_user">
+
+      <label for="password">รหัสผ่าน</label>
+      <input type="password" id="password" autocomplete="current-password" required>
+
+      <div class="btn-row">
+        <button type="submit" id="btnLogin" style="width:100%;">เข้าสู่ระบบ</button>
+      </div>
+      <div class="error-text" id="err"></div>
+    </form>
+  </div>
+
+  <div class="info-box">
+    <strong>บัญชีสำหรับทดสอบต้นแบบ</strong><br>
+    ชื่อผู้ใช้ <code>local_health_care_user</code> หรือ <code>admin_xyz_health_care</code> รหัสผ่าน <code>1234</code>
+    <br><br>
+    บัญชีชุดนี้เป็นเพียงตัวอย่างสำหรับทดสอบขั้นตอนการเข้าใช้งานเท่านั้น
+    ระบบที่นำไปใช้จริงต้องเปลี่ยนไปใช้รหัสหน่วยบริการที่ออกโดยหน่วยงานต้นสังกัด
+    พร้อมการเก็บรหัสผ่านแบบเข้ารหัสและนโยบายรหัสผ่านที่เหมาะสม
+  </div>
+
+  <div class="disclaimer" style="text-align:center;">
+    ต้นแบบเวอร์ชัน 0.1.0 ยังไม่ผ่านการตรวจสอบโดยบุคลากรทางการแพทย์
+    ห้ามนำไปใช้ตัดสินใจกับผู้ป่วยจริงก่อนผ่านการตรวจสอบ
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script>
+(async function init(){
+  const sel = document.getElementById("unit");
+  try {
+    const data = await api("/api/auth/units");
+    sel.innerHTML = '<option value="">— เลือกหน่วยบริการ —</option>' +
+      data.units.map(u => `<option value="${u.code}">${escapeHtml(u.name)}</option>`).join("");
+  } catch(e){
+    sel.innerHTML = '<option value="">โหลดรายชื่อหน่วยบริการไม่สำเร็จ</option>';
+    document.getElementById("err").textContent = "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ตรวจสอบว่ารัน backend แล้วหรือยัง";
+  }
+})();
+
+document.getElementById("loginForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("btnLogin");
+  const err = document.getElementById("err");
+  err.textContent = "";
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>กำลังเข้าสู่ระบบ';
+  try {
+    const s = await api("/api/auth/login", {
+      method:"POST",
+      body: JSON.stringify({
+        username: document.getElementById("username").value,
+        password: document.getElementById("password").value,
+        unit_code: document.getElementById("unit").value
+      })
+    });
+    saveSession(s);
+    location.href = "select.html";
+  } catch(ex){
+    err.textContent = ex.message;
+    btn.disabled = false; btn.textContent = "เข้าสู่ระบบ";
+  }
+};
+</script>
+</body>
+</html>
